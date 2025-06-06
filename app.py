@@ -24,16 +24,16 @@ def index():
 
 # Proxies configuration (to be used with yt-dlp)
 PROXIES = [
-    'http://45.77.99.210:3128',
-    'http://45.77.98.245:3128',
-    'http://45.77.101.41:3128',
-    'http://45.32.102.29:3128',
-    'http://45.63.27.78:3128',
-    'http://45.63.25.9:3128',
-    'http://45.63.26.176:3128',
-    'http://45.63.27.78:3128',
-    'http://45.63.0.178:3128',
-    'http://45.63.4.200:3128'
+    'http://orukwgru:xhwbr7lu6jlf@198.23.239.134:6540',
+    'http://orukwgru:xhwbr7lu6jlf@207.244.217.165:6712',
+    'http://orukwgru:xhwbr7lu6jlf@107.172.163.27:6543',
+    'http://orukwgru:xhwbr7lu6jlf@23.94.138.75:6349',
+    'http://orukwgru:xhwbr7lu6jlf@216.10.27.159:6837',
+    'http://orukwgru:xhwbr7lu6jlf@136.0.207.84:6661',
+    'http://orukwgru:xhwbr7lu6jlf@64.64.118.149:6732',
+    'http://orukwgru:xhwbr7lu6jlf@142.147.128.93:6593',
+    'http://orukwgru:xhwbr7lu6jlf@104.239.105.125:6655',
+    'http://orukwgru:xhwbr7lu6jlf@173.0.9.70:5653',
 ]
 
 # Helper function to parse yt-dlp formats for video qualities

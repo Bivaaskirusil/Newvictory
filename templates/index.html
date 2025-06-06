@@ -3,379 +3,423 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Freeytzone - YouTube Video Downloader</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <title>Freeytzone - Download YouTube Content</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .gradient-bg {
-            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* Dark Gray */
+            color: #f3f4f6; /* Light Gray */
         }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
         .card {
-            backdrop-filter: blur(10px);
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background-color: #1f2937; /* Darker Gray */
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        .input-field {
+            background-color: #374151; /* Medium Gray */
+            border: 1px solid #4b5563; /* Gray Border */
+            color: #f3f4f6;
+            border-radius: 0.5rem;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #60a5fa; /* Blue */
+            box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.5);
+        }
+
+        .btn {
+            border-radius: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            transition: all 0.2s ease-in-out;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
         .btn-primary {
-            transition: all 0.3s ease;
+            background-color: #3b82f6; /* Blue */
+            color: white;
         }
         .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            background-color: #2563eb; /* Darker Blue */
         }
-        .video-info {
-            transition: all 0.3s ease;
-            opacity: 0;
-            max-height: 0;
-            overflow: hidden;
+        .btn-secondary {
+            background-color: #4b5563; /* Gray */
+            color: white;
         }
-        .video-info.show {
-            opacity: 1;
-            max-height: 1000px;
+        .btn-secondary:hover {
+            background-color: #374151; /* Darker Gray */
         }
-        .loading {
-            display: none;
+        .btn-success {
+            background-color: #10b981; /* Green */
+            color: white;
+        }
+        .btn-success:hover {
+            background-color: #059669; /* Darker Green */
+        }
+
+        .loader {
+            border: 4px solid #4b5563;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #videoInfoSection, #downloadOptionsSection, #downloadProgressSection, #loader, #errorMessage {
+            display: none; /* Initially hidden */
+        }
+
+        .quality-btn {
+            border: 1px solid #4b5563;
+            background-color: #374151;
+        }
+        .quality-btn.selected {
+            background-color: #3b82f6; /* Blue */
+            color: white;
+            border-color: #3b82f6;
+        }
+        .error-message {
+            color: #f87171; /* Light Red */
+            background-color: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
         }
     </style>
 </head>
-<body class="min-h-screen gradient-bg text-white">
-    <div class="container mx-auto px-4 py-12">
-        <header class="text-center mb-12">
-            <h1 class="text-4xl md:text-5xl font-bold mb-4">Freeytzone</h1>
-            <p class="text-xl text-gray-200">Download YouTube videos and audios in high quality</p>
-        </header>
+<body>
+    <div class="min-h-screen flex flex-col items-center justify-center p-4">
+        <div class="w-full max-w-2xl">
+            <header class="text-center mb-10">
+                <h1 class="text-4xl font-bold text-white">Free<span class="text-blue-500">yt</span>zone</h1>
+                <p class="text-gray-400 mt-2">Download YouTube videos, audios, and more, effortlessly.</p>
+            </header>
 
-        <div class="max-w-3xl mx-auto card rounded-2xl p-6 md:p-8 shadow-2xl">
-            <div class="flex flex-col md:flex-row gap-4">
-                <input 
-                    type="text" 
-                    id="videoUrl" 
-                    placeholder="Paste YouTube URL here..." 
-                    class="flex-grow px-4 py-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-white focus:border-transparent"
-                    autocomplete="off"
-                >
-                <button 
-                    onclick="getVideoInfo()" 
-                    id="searchBtn"
-                    class="btn-primary px-6 py-3 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold transition-colors"
-                    style="display:inline-block;"
-                >
-                    <i class="fas fa-search mr-2"></i> Search
-                </button>
-                <script>
-                  // Always keep search bar and button visible
-                  document.getElementById('videoUrl').style.display = 'inline-block';
-                  document.getElementById('searchBtn').style.display = 'inline-block';
-                </script>
-            </div>
-
-            <div id="loading" class="loading mt-6 text-center">
-                <div class="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-white"></div>
-                <p class="mt-2">Fetching video info...</p>
-            </div>
-
-            <div id="videoInfo" class="video-info mt-8">
-                <div class="flex flex-col md:flex-row gap-6">
-                    <div class="md:w-1/3">
-                        <img id="thumbnail" src="" alt="Video Thumbnail" class="w-full rounded-lg shadow-lg">
+            <main class="card">
+                <div class="mb-6">
+                    <label for="videoUrl" class="block text-sm font-medium text-gray-300 mb-1">YouTube Video URL</label>
+                    <div class="flex space-x-2">
+                        <input type="text" id="videoUrl" placeholder="https://www.youtube.com/watch?v=..." class="input-field flex-grow p-3" autocomplete="off">
+                        <button id="fetchBtn" onclick="getVideoInfo()" class="btn btn-primary">
+                            <i class="fas fa-search mr-2"></i> Fetch
+                        </button>
                     </div>
-                    <div class="md:w-2/3">
-                        <h2 id="videoTitle" class="text-2xl font-bold mb-2"></h2>
-                        <p id="videoAuthor" class="text-gray-300 mb-4"></p>
-                        <div class="grid grid-cols-2 gap-4 text-sm text-gray-300 mb-6">
-                            <div><i class="fas fa-clock mr-2"></i> <span id="videoDuration"></span></div>
-                            <div><i class="fas fa-eye mr-2"></i> <span id="videoViews"></span></div>
-                            <div><i class="fas fa-calendar-alt mr-2"></i> <span id="videoDate"></span></div>
-                        </div>
-                        
-                        <div class="mb-6">
-                            <h3 class="font-semibold mb-2">Download Options</h3>
-                            <div class="flex flex-wrap gap-2 mb-4">
-                                <button onclick="showQualityOptions('video')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center">
-                                    <i class="fas fa-download mr-2"></i> Video
-                                </button>
-                                <button onclick="showQualityOptions('audio')" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg flex items-center">
-                                    <i class="fas fa-music mr-2"></i> Audio (MP3)
-                                </button>
-                                <button onclick="downloadVideoInfo()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center">
-                                    <i class="fas fa-info-circle mr-2"></i> Video Info
-                                </button>
-                                <a id="thumbnailDownload" href="#" download class="px-4 py-2 bg-pink-600 hover:bg-pink-700 rounded-lg flex items-center">
-                                    <i class="fas fa-image mr-2"></i> Thumbnail
-                                </a>
-                            </div>
+                </div>
 
-                            <div id="qualityOptions" class="hidden">
-                                <h4 class="font-medium mb-2">Select Quality:</h4>
-                                <div id="qualityButtons" class="flex flex-wrap gap-2"></div>
-                                <div class="mt-4">
-                                    <button onclick="startDownload()" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg font-medium">
-                                        <i class="fas fa-download mr-2"></i> Download
-                                    </button>
-                                    <button onclick="cancelDownload()" class="ml-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg font-medium">
-                                        Cancel
-                                    </button>
-                                </div>
+                <div id="loader" class="flex flex-col items-center justify-center my-6">
+                    <div class="loader"></div>
+                    <p class="mt-3 text-gray-400">Fetching video details...</p>
+                </div>
+                
+                <div id="errorMessage" class="error-message"></div>
+
+                <div id="videoInfoSection" class="mt-8">
+                    <h2 class="text-2xl font-semibold mb-4 text-white">Video Details</h2>
+                    <div class="flex flex-col md:flex-row gap-6">
+                        <img id="thumbnail" src="" alt="Video Thumbnail" class="w-full md:w-1/3 h-auto object-cover rounded-lg shadow-md">
+                        <div class="flex-grow">
+                            <h3 id="videoTitle" class="text-xl font-bold text-blue-400"></h3>
+                            <p id="videoAuthor" class="text-sm text-gray-400 mt-1 mb-3"></p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm text-gray-300">
+                                <p><i class="fas fa-clock w-5 mr-2 text-blue-500"></i>Duration: <span id="videoDuration"></span></p>
+                                <p><i class="fas fa-eye w-5 mr-2 text-blue-500"></i>Views: <span id="videoViews"></span></p>
+                                <p><i class="fas fa-calendar-alt w-5 mr-2 text-blue-500"></i>Published: <span id="videoDate"></span></p>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <div id="downloadProgress" class="hidden mt-6">
-                <div class="mb-2 flex justify-between">
-                    <span>Downloading...</span>
-                    <span id="progressPercent">0%</span>
+                <div id="downloadOptionsSection" class="mt-8">
+                    <h2 class="text-2xl font-semibold mb-4 text-white">Download Options</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <h3 class="text-lg font-medium text-gray-200 mb-2">Video</h3>
+                            <div id="videoQualityButtons" class="flex flex-wrap gap-2"></div>
+                            <button id="downloadVideoBtn" class="btn btn-success mt-3 w-full md:w-auto" disabled><i class="fas fa-video mr-2"></i>Download Video</button>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-medium text-gray-200 mb-2">Audio</h3>
+                            <button id="downloadAudioBtn" class="btn btn-success w-full md:w-auto"><i class="fas fa-music mr-2"></i>Download MP3 (Best)</button>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-medium text-gray-200 mb-2">Assets</h3>
+                            <div class="flex flex-wrap gap-2">
+                                <a id="downloadThumbnailBtn" href="#" download class="btn btn-secondary"><i class="fas fa-image mr-2"></i>Thumbnail</a>
+                                <button id="downloadInfoBtn" class="btn btn-secondary"><i class="fas fa-file-alt mr-2"></i>Video Info (.txt)</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="w-full bg-gray-700 rounded-full h-2.5">
-                    <div id="progressBar" class="bg-blue-500 h-2.5 rounded-full" style="width: 0%"></div>
-                </div>
-                <p id="statusMessage" class="mt-2 text-sm text-gray-300">Preparing download...</p>
-            </div>
-        </div>
 
-        <div class="mt-12 text-center text-gray-300">
-            <p>© 2023 Freeytzone - Download YouTube videos and audios for free</p>
-            <p class="text-sm mt-2">Please use this service responsibly and respect YouTube's Terms of Service.</p>
+                <div id="downloadProgressSection" class="mt-8">
+                    <h2 class="text-2xl font-semibold mb-4 text-white">Download Progress</h2>
+                    <div class="w-full bg-gray-600 rounded-full h-4 overflow-hidden">
+                        <div id="progressBar" class="bg-blue-500 h-full rounded-full transition-all duration-300 ease-linear text-xs text-white flex items-center justify-center" style="width: 0%;">0%</div>
+                    </div>
+                    <p id="progressStatus" class="text-center mt-2 text-gray-400">Starting download...</p>
+                </div>
+            </main>
+
+            <footer class="text-center mt-10 text-gray-500 text-sm">
+                <p>&copy; <span id="currentYear"></span> Freeytzone. All rights reserved.</p>
+                <p class="mt-1">Please use this service responsibly and respect copyright laws.</p>
+            </footer>
         </div>
     </div>
 
     <script>
-        let currentVideoUrl = '';
-        let currentType = '';
-        let currentQualities = [];
-        let downloadInProgress = false;
-        let downloadCheckInterval;
+        document.getElementById('currentYear').textContent = new Date().getFullYear();
+        const videoUrlInput = document.getElementById('videoUrl');
+        const fetchBtn = document.getElementById('fetchBtn');
+        const loaderDiv = document.getElementById('loader');
+        const errorMessageDiv = document.getElementById('errorMessage');
+        
+        const videoInfoSection = document.getElementById('videoInfoSection');
+        const thumbnailImg = document.getElementById('thumbnail');
+        const videoTitleH3 = document.getElementById('videoTitle');
+        const videoAuthorP = document.getElementById('videoAuthor');
+        const videoDurationSpan = document.getElementById('videoDuration');
+        const videoViewsSpan = document.getElementById('videoViews');
+        const videoDateSpan = document.getElementById('videoDate');
 
-        function showLoading(show) {
-            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        const downloadOptionsSection = document.getElementById('downloadOptionsSection');
+        const videoQualityButtonsDiv = document.getElementById('videoQualityButtons');
+        const downloadVideoBtn = document.getElementById('downloadVideoBtn');
+        const downloadAudioBtn = document.getElementById('downloadAudioBtn');
+        const downloadThumbnailBtn = document.getElementById('downloadThumbnailBtn');
+        const downloadInfoBtn = document.getElementById('downloadInfoBtn');
+
+        const downloadProgressSection = document.getElementById('downloadProgressSection');
+        const progressBar = document.getElementById('progressBar');
+        const progressStatus = document.getElementById('progressStatus');
+
+        let currentVideoData = null;
+        let selectedVideoQuality = null;
+
+        function showLoader(show) {
+            loaderDiv.style.display = show ? 'flex' : 'none';
+            fetchBtn.disabled = show;
+            videoUrlInput.disabled = show;
         }
 
-        function showVideoInfo(show) {
-            const videoInfo = document.getElementById('videoInfo');
-            if (show) {
-                videoInfo.classList.add('show');
-            } else {
-                videoInfo.classList.remove('show');
+        function showErrorMessage(message) {
+            errorMessageDiv.innerHTML = message; // Use innerHTML to allow simple HTML like <br>
+            errorMessageDiv.style.display = 'block';
+            videoInfoSection.style.display = 'none';
+            downloadOptionsSection.style.display = 'none';
+            downloadProgressSection.style.display = 'none';
+            console.error("[User Error]:", message);
+            // Enhanced bot detection message
+            if (message.toLowerCase().includes('captcha') || 
+                message.toLowerCase().includes('verify') || 
+                message.toLowerCase().includes('consent') || 
+                message.toLowerCase().includes('403') || 
+                message.toLowerCase().includes('429') || 
+                message.toLowerCase().includes('unavailable') || 
+                message.toLowerCase().includes('access denied') || 
+                message.toLowerCase().includes('too many requests') || 
+                message.toLowerCase().includes('age restricted')) {
+                console.warn("[Bot Detection Hint]: Possible bot verification or restriction issue. Message:", message);
+                errorMessageDiv.innerHTML += "<br><small>(This could be due to YouTube's restrictions, bot verification, or network issues. Please try again after a while. If the problem persists, the video might be private, age-restricted, or unavailable in your region.)</small>";
             }
         }
 
-        function getVideoInfo() {
-    console.log('[DEBUG] getVideoInfo called');
-            const url = document.getElementById('videoUrl').value.trim();
+        function hideErrorMessage() {
+            errorMessageDiv.style.display = 'none';
+            errorMessageDiv.innerHTML = '';
+        }
+
+        function resetUI(clearInput = false) {
+            hideErrorMessage();
+            videoInfoSection.style.display = 'none';
+            downloadOptionsSection.style.display = 'none';
+            downloadProgressSection.style.display = 'none';
+            videoQualityButtonsDiv.innerHTML = '';
+            downloadVideoBtn.disabled = true;
+            selectedVideoQuality = null;
+            currentVideoData = null;
+            if (clearInput) {
+                videoUrlInput.value = '';
+            }
+        }
+
+        async function getVideoInfo() {
+            const url = videoUrlInput.value.trim();
             if (!url) {
-                alert('Please enter a YouTube URL');
+                showErrorMessage('Please paste a valid YouTube URL.');
                 return;
             }
+            console.log('[DEBUG] getVideoInfo called with URL:', url);
+            resetUI();
+            showLoader(true);
 
-            // Reset UI
-            document.getElementById('qualityOptions').classList.add('hidden');
-            showVideoInfo(false);
-            showLoading(true);
+            try {
+                const response = await fetch('/get_info', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                
+                const data = await response.json();
+                console.log('[DEBUG] /get_info response:', data);
 
-            currentVideoUrl = url;
-
-            // Use fetch to get video info
-            fetch('/get_info', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ url: url })
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log('[DEBUG] Video info response:', data);
-                if (data.error) {
-                    throw new Error(data.error);
+                if (!response.ok || data.error) {
+                    throw new Error(data.error || `Server error: ${response.status}`);
                 }
 
-                // Update UI with video info
-                document.getElementById('videoTitle').textContent = data.title;
-                document.getElementById('videoAuthor').textContent = `by ${data.author}`;
-                document.getElementById('videoDuration').textContent = data.length;
-                document.getElementById('videoViews').textContent = data.views + ' views';
-                document.getElementById('videoDate').textContent = data.publish_date;
-                
-                const thumbnail = document.getElementById('thumbnail');
-                thumbnail.src = data.thumbnail;
-                
-                // Update thumbnail download link
-                document.getElementById('thumbnailDownload').href = data.thumbnail;
-                document.getElementById('thumbnailDownload').setAttribute('download', `${data.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_thumbnail.jpg`);
-                
-                // Store available qualities
-                currentQualities = data.qualities || [];
-                
-                showLoading(false);
-                showVideoInfo(true);
-            })
-            .catch(error => {
-                showLoading(false);
-                alert('Error: ' + error.message);
+                currentVideoData = data;
+                displayVideoInfo(data);
+                populateDownloadOptions(data);
+
+            } catch (error) {
                 console.error('[DEBUG] Error in getVideoInfo:', error);
-            });
+                showErrorMessage(error.message || 'Failed to fetch video information.');
+            } finally {
+                showLoader(false);
+            }
         }
 
-        function showQualityOptions(type) {
-            currentType = type;
-            const qualityButtons = document.getElementById('qualityButtons');
-            qualityButtons.innerHTML = '';
-            
-            if (type === 'audio') {
-                // For audio, we just need one option
-                qualityButtons.innerHTML = `
-                    <button onclick="selectQuality('best')" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded">
-                        MP3 (Best Quality)
-                    </button>
-                `;
+        function displayVideoInfo(data) {
+            thumbnailImg.src = data.thumbnail;
+            videoTitleH3.textContent = data.title;
+            videoAuthorP.textContent = `By ${data.author}`;
+            videoDurationSpan.textContent = data.length;
+            videoViewsSpan.textContent = data.views;
+            videoDateSpan.textContent = data.publish_date;
+            videoInfoSection.style.display = 'block';
+        }
+
+        function populateDownloadOptions(data) {
+            videoQualityButtonsDiv.innerHTML = ''; // Clear previous buttons
+            if (data.qualities && data.qualities.length > 0) {
+                data.qualities.forEach(quality => {
+                    const btn = document.createElement('button');
+                    btn.textContent = quality;
+                    btn.classList.add('btn', 'btn-secondary', 'quality-btn', 'text-sm', 'py-2', 'px-3');
+                    btn.onclick = () => {
+                        document.querySelectorAll('#videoQualityButtons .quality-btn').forEach(b => b.classList.remove('selected'));
+                        btn.classList.add('selected');
+                        selectedVideoQuality = quality;
+                        downloadVideoBtn.disabled = false;
+                        console.log('[DEBUG] Selected video quality:', quality);
+                    };
+                    videoQualityButtonsDiv.appendChild(btn);
+                });
             } else {
-                // For video, show available qualities
-                if (currentQualities.length > 0) {
-                    currentQualities.forEach(quality => {
-                        const button = document.createElement('button');
-                        button.className = 'px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded';
-                        button.textContent = quality;
-                        button.onclick = () => selectQuality(quality);
-                        qualityButtons.appendChild(button);
-                    });
+                videoQualityButtonsDiv.innerHTML = '<p class="text-gray-400 text-sm">No specific video qualities found. Will attempt best available.</p>';
+                selectedVideoQuality = 'best'; // Default to best if no qualities listed
+                downloadVideoBtn.disabled = false;
+            }
+
+            downloadThumbnailBtn.href = data.thumbnail;
+            downloadThumbnailBtn.download = `${(data.title || 'thumbnail').replace(/[^a-zA-Z0-9]/g, '_')}.jpg`;
+
+            downloadOptionsSection.style.display = 'block';
+        }
+
+        downloadVideoBtn.onclick = () => startDownload('video', selectedVideoQuality || 'best');
+        downloadAudioBtn.onclick = () => startDownload('audio', 'best');
+        downloadInfoBtn.onclick = () => {
+            if (!currentVideoData || !videoUrlInput.value.trim()) {
+                showErrorMessage('No video URL processed. Please fetch video info first.');
+                return;
+            }
+            console.log('[DEBUG] Downloading video info for URL:', videoUrlInput.value.trim());
+            window.location.href = `/get_video_info?url=${encodeURIComponent(videoUrlInput.value.trim())}`;
+        };
+
+        async function startDownload(type, quality) {
+            if (!currentVideoData || !videoUrlInput.value.trim()) {
+                showErrorMessage('No video data available. Please fetch video info first.');
+                return;
+            }
+            console.log(`[DEBUG] Starting download. Type: ${type}, Quality: ${quality}, URL: ${videoUrlInput.value.trim()}`);
+            
+            downloadProgressSection.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressBar.textContent = '0%';
+            progressStatus.textContent = `Preparing to download ${type}...`;
+            hideErrorMessage();
+            fetchBtn.disabled = true; // Disable fetch button during download
+            videoUrlInput.disabled = true;
+
+            try {
+                const response = await fetch('/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: videoUrlInput.value.trim(), quality, type })
+                });
+
+                const data = await response.json();
+                console.log('[DEBUG] /download response:', data);
+
+                if (!response.ok || data.error) {
+                    throw new Error(data.error || `Server error: ${response.status}`);
+                }
+
+                if (data.success && data.filename) {
+                    let currentProgress = 0;
+                    progressStatus.textContent = `Downloading ${data.filename}... (0%)`;
+                    progressBar.textContent = `0%`;
+                    
+                    const interval = setInterval(() => {
+                        currentProgress += 5; // Slower, more realistic simulation
+                        if (currentProgress <= 100) {
+                            progressBar.style.width = `${currentProgress}%`;
+                            progressBar.textContent = `${currentProgress}%`;
+                            progressStatus.textContent = `Downloading ${data.filename}... (${currentProgress}%)`;
+                        } else {
+                            clearInterval(interval);
+                            progressBar.style.width = '100%';
+                            progressBar.textContent = '100%';
+                            progressStatus.textContent = `Download complete: ${data.filename}. Starting browser download...`;
+                            window.location.href = `/download_file/${encodeURIComponent(data.filename)}`;
+                            setTimeout(() => {
+                                downloadProgressSection.style.display = 'none'; 
+                                resetUI(true); // Clear input after successful download and reset UI
+                            }, 4000);
+                        }
+                    }, 250); 
                 } else {
-                    // Fallback if no qualities are available
-                    qualityButtons.innerHTML = `
-                        <button onclick="selectQuality('720p')" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded">
-                            720p
-                        </button>
-                        <button onclick="selectQuality('480p')" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded">
-                            480p
-                        </button>
-                        <button onclick="selectQuality('360p')" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded">
-                            360p
-                        </button>
-                        <button onclick="selectQuality('best')" class="px-3 py-1 bg-green-600 hover:bg-green-700 rounded">
-                            Best Available
-                        </button>
-                    `;
+                    throw new Error(data.message || 'Download failed to start on server.');
+                }
+
+            } catch (error) {
+                console.error('[DEBUG] Error in startDownload:', error);
+                showErrorMessage(error.message || 'Failed to start download.');
+                downloadProgressSection.style.display = 'none';
+            } finally {
+                 // Re-enable fetch button and input field if download fails or after it's done (handled in success path too)
+                if (downloadProgressSection.style.display === 'none') { // Only if not still showing progress
+                    fetchBtn.disabled = false;
+                    videoUrlInput.disabled = false;
                 }
             }
-            
-            document.getElementById('qualityOptions').classList.remove('hidden');
         }
 
-        function selectQuality(quality) {
-            // Highlight selected quality
-            const buttons = document.querySelectorAll('#qualityButtons button');
-            buttons.forEach(btn => {
-                btn.classList.remove('bg-green-600');
-                btn.classList.add('bg-blue-600');
-            });
-            event.target.classList.remove('bg-blue-600');
-            event.target.classList.add('bg-green-600');
-        }
-
-        function cancelDownload() {
-            document.getElementById('qualityOptions').classList.add('hidden');
-        }
-
-        function startDownload() {
-            console.log('[DEBUG] startDownload called');
-            if (downloadInProgress) return;
-            
-            const qualityButtons = document.getElementById('qualityButtons');
-            const selectedButton = qualityButtons.querySelector('.bg-green-600');
-            const quality = selectedButton ? selectedButton.textContent.trim() : 'best';
-            
-            // Show progress bar
-            document.getElementById('downloadProgress').classList.remove('hidden');
-            document.getElementById('progressBar').style.width = '0%';
-            document.getElementById('progressPercent').textContent = '0%';
-            document.getElementById('statusMessage').textContent = 'Starting download...';
-            
-            downloadInProgress = true;
-            
-            // Start the download
-            fetch('/download', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    url: currentVideoUrl,
-                    quality: quality,
-                    type: currentType
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log('[DEBUG] Download response:', data);
-                if (data.error) {
-                    throw new Error(data.error);
-                }
-                
-                // Update progress
-                updateProgress(50, 'Processing...');
-                
-                // Check download status periodically
-                checkDownloadStatus(data.filename);
-            })
-            .catch(error => {
-                console.error('[DEBUG] Error in startDownload:', error);
-                document.getElementById('statusMessage').textContent = 'Error: ' + error.message;
-                downloadInProgress = false;
-            });
-        }
-        
-        function checkDownloadStatus(filename) {
-            // In a real implementation, you would use WebSockets or server-sent events
-            // For this example, we'll simulate progress
-            let progress = 50;
-            const progressInterval = setInterval(() => {
-                progress += Math.random() * 10;
-                if (progress >= 90) {
-                    progress = 90;
-                    clearInterval(progressInterval);
-                    
-                    // Simulate completion after a delay
-                    setTimeout(() => {
-                        updateProgress(100, 'Download complete!');
-                        downloadInProgress = false;
-                        
-                        // Trigger file download
-                        window.location.href = `/download_file/${encodeURIComponent(filename)}`;
-                        
-                        // Reset after a delay
-                        setTimeout(() => {
-                            document.getElementById('downloadProgress').classList.add('hidden');
-                        }, 2000);
-                    }, 1000);
-                } else {
-                    updateProgress(progress, 'Downloading...');
-                }
-            }, 300);
-        }
-        
-        function updateProgress(percent, message) {
-            document.getElementById('progressBar').style.width = `${percent}%`;
-            document.getElementById('progressPercent').textContent = `${Math.round(percent)}%`;
-            document.getElementById('statusMessage').textContent = message;
-        }
-        
-        function downloadVideoInfo() {
-            if (!currentVideoUrl) return;
-            
-            window.location.href = `/get_video_info?url=${encodeURIComponent(currentVideoUrl)}`;
-        }
-        
-        // Allow pasting URL with Ctrl+V or Cmd+V
-        document.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-                navigator.clipboard.readText().then(text => {
-                    if (text.includes('youtube.com') || text.includes('youtu.be')) {
-                        document.getElementById('videoUrl').value = text;
-                        // Optional: Auto-trigger search
-                        // getVideoInfo();
-                    }
-                });
+        videoUrlInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                getVideoInfo();
             }
         });
+        
+        // Initial UI reset
+        resetUI();
+        console.log('[DEBUG] Freeytzone script loaded and UI reset.');
     </script>
 </body>
 </html>

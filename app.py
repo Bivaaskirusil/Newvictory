@@ -83,10 +83,7 @@ def download():
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best' if download_type == 'video' else 'bestaudio/best',
             'outtmpl': os.path.join(app.config['UPLOAD_FOLDER'], '%(title)s.%(ext)s'),
             'noplaylist': True,
-            'quiet': True,
-            'no_warnings': True,
                     # Proxy will be handled in the loop
-            'noplaylist': True,
             'quiet': False, # Set to False to capture more error details
             'no_warnings': False, # Set to False to capture more error details
             'extract_flat': 'discard_in_playlist', # Avoids downloading playlist items if a single video URL from a playlist is given
@@ -94,6 +91,22 @@ def download():
             'ignoreerrors': True, # Continue on download errors for individual formats
             'verbose': True # More verbose output for debugging
         }
+
+        # Refine format based on specific quality or audio type
+        if download_type == 'video' and quality != 'best':
+            # Override format for specific video quality that prefers mp4 container.
+            ydl_opts['format'] = f'bestvideo[height<={quality[:-1]}][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4][height<={quality[:-1]}]/bestvideo[height<={quality[:-1]}]+bestaudio/best[height<={quality[:-1]}]'
+            ydl_opts.pop('postprocessors', None) # Ensure no audio postprocessors conflict
+        elif download_type == 'audio':
+            # Ensure format is set for best audio and add MP3 postprocessing
+            # The default format in ydl_opts for audio is 'bestaudio/best', this confirms and adds postprocessor.
+            ydl_opts['format'] = 'bestaudio/best' 
+            ydl_opts['postprocessors'] = [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }]
+        # If download_type == 'video' and quality == 'best', the initial format from ydl_opts definition is used.
 
         # Initial info extraction to get the title for the filename template
         # This first call will use the default proxy or no proxy if not set in ydl_opts_info
@@ -202,20 +215,7 @@ def download():
 
     except Exception as e:
         logger.error(f"Critical error in download route for {url}: {str(e)}", exc_info=True)
-        }
-
-        if download_type == 'video' and quality != 'best':
-            ydl_opts['format'] = f'bestvideo[height<={quality[:-1]}][ext=mp4]+bestaudio[ext=m4a]/best[height<={quality[:-1]}]/best'
-        elif download_type == 'audio':
-            ydl_opts['postprocessors'] = [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }]
-
-        # This part is now handled by the proxy rotation loop above
-        # Ensure the final return for general exceptions in the route is outside the loop logic
-        return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
+        return jsonify({'error': f'An unexpected error occurred during download processing: {str(e)}'}), 500
 
 @app.route('/download_file/<filename>')
 def download_file(filename):

@@ -2,7 +2,6 @@ import os
 import json
 import yt_dlp
 from flask import Flask, render_template, request, jsonify, send_file, Response
-from pytube import YouTube
 from bs4 import BeautifulSoup
 import requests
 import re
@@ -33,18 +32,32 @@ PROXIES = [
     'http://45.63.4.200:3128'
 ]
 
-def get_available_qualities(yt):
-    """Get available video qualities"""
-    streams = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc()
-    return [stream.resolution for stream in streams if stream.resolution]
+# Helper function to parse yt-dlp formats for video qualities
+def parse_ytdlp_video_qualities(formats):
+    qualities = set()
+    for f in formats:
+        # Ensure it's a video format, has height, and ideally mp4 container with both video and audio
+        if f.get('vcodec') != 'none' and f.get('height') and f.get('ext') == 'mp4':
+            # Prefer formats that also have audio for simpler selection, though frontend might combine later
+            if f.get('acodec') != 'none': 
+                qualities.add(f"{f.get('height')}p")
+        # Fallback for some webm or other formats if mp4 with audio isn't common
+        elif f.get('vcodec') != 'none' and f.get('height'):
+             qualities.add(f"{f.get('height')}p (webm)") # Indicate if it's likely webm or needs muxing
 
-def sanitize_filename(filename):
-    """Remove invalid characters from filename"""
-    return re.sub(r'[\\/*?:"<>|]', '', filename)
+    if not qualities and any(f.get('vcodec') != 'none' and f.get('height') for f in formats):
+        # If no mp4 found, list any available video resolution
+        for f in formats:
+            if f.get('vcodec') != 'none' and f.get('height'):
+                 qualities.add(f"{f.get('height')}p")
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+    # Sort by resolution (integer part of '720p'), descending
+    sorted_qualities = sorted(list(qualities), key=lambda x: int(x.split('p')[0]) if x.split('p')[0].isdigit() else 0, reverse=True)
+    
+    if not sorted_qualities and any(f.get('vcodec') != 'none' for f in formats):
+        sorted_qualities.append('Best Video') # Generic fallback
+    
+    return sorted_qualities if sorted_qualities else ['Best Video']
 
 @app.route('/get_info', methods=['POST'])
 def get_info():
@@ -52,21 +65,126 @@ def get_info():
     if not url:
         return jsonify({'error': 'URL is required'}), 400
 
-    try:
-        yt = YouTube(url)
-        video_info = {
-            'title': yt.title,
-            'author': yt.author,
-            'length': str(yt.length // 60) + ':' + str(yt.length % 60).zfill(2),
-            'views': f"{yt.views:,}",
-            'publish_date': yt.publish_date.strftime('%Y-%m-%d') if yt.publish_date else 'N/A',
-            'thumbnail': yt.thumbnail_url,
-            'qualities': get_available_qualities(yt)
-        }
-        return jsonify(video_info)
-    except Exception as e:
-        logger.error(f"Error getting video info for {url}: {str(e)}", exc_info=True)
-        return jsonify({'error': f'Could not retrieve video information: {str(e)}'}), 500
+    ydl_opts_info = {
+        'quiet': False,
+        'no_warnings': False,
+        'logger': logger, 
+        'skip_download': True,
+        'extract_flat': 'discard_in_playlist',
+        'forcejson': True,
+        'ignoreerrors': True, # Try to fetch info even if some parts (like comments) fail
+        # 'youtube_include_dash_manifest': False, # Might reduce unnecessary data for info extraction
+    }
+
+    proxies_to_try = PROXIES + [None] if PROXIES else [None]
+    last_error = "Failed to fetch video metadata after trying all available proxies."
+    info_dict_full = None
+
+    for proxy_url in proxies_to_try:
+        current_ydl_opts = ydl_opts_info.copy()
+        if proxy_url:
+            current_ydl_opts['proxy'] = proxy_url
+            logger.info(f"Attempting metadata fetch for {url} using proxy: {proxy_url}")
+        else:
+            current_ydl_opts.pop('proxy', None)
+            logger.info(f"Attempting metadata fetch for {url} without proxy")
+        
+        try:
+            with yt_dlp.YoutubeDL(current_ydl_opts) as ydl:
+                info_dict_full = ydl.extract_info(url, download=False)
+                
+                # If 'entries' is present, it's a playlist, take the first video's info
+                # Or handle as error/unsupported if only single video expected
+                if info_dict_full and 'entries' in info_dict_full and info_dict_full['entries']:
+                    info_dict = info_dict_full['entries'][0]
+                elif info_dict_full:
+                    info_dict = info_dict_full
+                else:
+                    # If ydl.extract_info returned None or an empty dict for some reason
+                    logger.warning(f"Metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned no data.")
+                    last_error = "No data received from video provider."
+                    info_dict_full = None # Ensure loop continues
+                    continue
+
+                # Check if essential fields like title are present, otherwise it might be an error page or restricted video
+                if not info_dict.get('title') or info_dict.get('_type') == 'error':
+                    err_msg = "Video information is unavailable (may be private, deleted, or restricted)."
+                    if info_dict.get('_type') == 'error' and info_dict.get('error_message'):
+                        err_msg = info_dict.get('error_message')
+                    elif info_dict.get('title') is None and info_dict.get('webpage_url_basename') == 'error':
+                        err_msg = "Video information is unavailable (may be private or deleted)."
+                    
+                    logger.warning(f"Metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned incomplete data or error. Message: {err_msg}")
+                    last_error = err_msg
+                    info_dict_full = None # Mark as failure for this proxy
+                    continue # Try next proxy
+
+                logger.info(f"Successfully fetched metadata for {url} with proxy: {proxy_url if proxy_url else 'None'}")
+                break # Success, info_dict_full contains the data (or info_dict if playlist item)
+
+        except yt_dlp.utils.DownloadError as e:
+            logger.warning(f"yt-dlp DownloadError during metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}): {str(e)}")
+            last_error = str(e)
+            if hasattr(e, 'exc_info') and e.exc_info and e.exc_info[1]:
+                last_error = str(e.exc_info[1])
+            info_dict_full = None # Mark as failure
+            # Continue to next proxy
+        except Exception as e:
+            logger.error(f"Unexpected error during metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}): {str(e)}", exc_info=True)
+            last_error = f"An unexpected error occurred: {str(e)}"
+            info_dict_full = None # Mark as failure
+            # Continue to next proxy
+
+    if not info_dict_full or not info_dict_full.get('title'): # Check final result after loop
+        logger.error(f"All metadata fetch attempts failed for {url}. Last error: {last_error}")
+        return jsonify({'error': f'Could not retrieve video information: {last_error}'}), 500
+
+    # Use 'info_dict' which points to the single video's data (either original or first playlist item)
+    # If info_dict_full had 'entries', info_dict is info_dict_full['entries'][0]
+    # Otherwise, info_dict is info_dict_full itself.
+    # This logic was handled above, so 'info_dict' should be the correct one here.
+    
+    # Safely extract and format data
+    title = info_dict.get('title', 'N/A')
+    author = info_dict.get('uploader', info_dict.get('channel', 'N/A'))
+    duration_seconds = info_dict.get('duration', 0)
+    length_str = f"{duration_seconds // 60}:{str(duration_seconds % 60).zfill(2)}" if duration_seconds else "N/A"
+    views = f"{info_dict.get('view_count', 0):,}" if info_dict.get('view_count') is not None else "N/A"
+    
+    upload_date_str = info_dict.get('upload_date') # Format YYYYMMDD
+    publish_date_str = 'N/A'
+    if upload_date_str:
+        try:
+            publish_date_dt = datetime.strptime(upload_date_str, '%Y%m%d')
+            publish_date_str = publish_date_dt.strftime('%Y-%m-%d')
+        except ValueError:
+            logger.warning(f"Could not parse upload_date: {upload_date_str}")
+            publish_date_str = upload_date_str # Use raw if parsing fails
+
+    # Thumbnail: yt-dlp provides a list of thumbnails, find a good one or use the default
+    selected_thumbnail = info_dict.get('thumbnail') # This is often the best one
+    if not selected_thumbnail and info_dict.get('thumbnails'):
+        # Prefer thumbnails with 'hqdefault' in id or url, or just take the last one (often highest res)
+        hq_thumb = next((t.get('url') for t in info_dict['thumbnails'] if 'hqdefault' in t.get('id', '') or 'hqdefault' in t.get('url', '')), None)
+        if hq_thumb:
+            selected_thumbnail = hq_thumb
+        else:
+            selected_thumbnail = info_dict['thumbnails'][-1].get('url') # Fallback to last in list
+    if not selected_thumbnail:
+         selected_thumbnail = 'static/placeholder.png' # A default placeholder
+
+    available_qualities = parse_ytdlp_video_qualities(info_dict.get('formats', []))
+
+    video_info_response = {
+        'title': title,
+        'author': author,
+        'length': length_str,
+        'views': views,
+        'publish_date': publish_date_str,
+        'thumbnail': selected_thumbnail,
+        'qualities': available_qualities
+    }
+    return jsonify(video_info_response)
 
 @app.route('/download', methods=['POST'])
 def download():
@@ -237,53 +355,220 @@ def get_thumbnail():
     url = request.args.get('url')
     if not url:
         return jsonify({'error': 'URL is required'}), 400
+
+    ydl_opts_thumb = {
+        'quiet': False,
+        'no_warnings': False,
+        'logger': logger,
+        'skip_download': True,
+        'extract_flat': 'discard_in_playlist',
+        'forcejson': True,
+        'ignoreerrors': True,
+        # yt-dlp fetches standard metadata including thumbnails by default
+    }
+
+    proxies_to_try = PROXIES + [None] if PROXIES else [None]
+    last_error = "Failed to fetch thumbnail after trying all available proxies."
+    info_dict_full = None # To store the full result from ydl.extract_info
+    info_dict = None # To store the actual video info (handles playlists)
+
+    for proxy_url in proxies_to_try:
+        current_ydl_opts = ydl_opts_thumb.copy()
+        if proxy_url:
+            current_ydl_opts['proxy'] = proxy_url
+            logger.info(f"Attempting thumbnail fetch for {url} using proxy: {proxy_url}")
+        else:
+            current_ydl_opts.pop('proxy', None)
+            logger.info(f"Attempting thumbnail fetch for {url} without proxy")
+        
+        try:
+            with yt_dlp.YoutubeDL(current_ydl_opts) as ydl:
+                info_dict_full = ydl.extract_info(url, download=False)
+                
+                if info_dict_full and 'entries' in info_dict_full and info_dict_full['entries']:
+                    info_dict = info_dict_full['entries'][0]
+                elif info_dict_full:
+                    info_dict = info_dict_full
+                else:
+                    logger.warning(f"Thumbnail fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned no data.")
+                    last_error = "No data received for thumbnail."
+                    info_dict_full = None # Reset to ensure loop continues or fails correctly
+                    continue
+
+                # Check if thumbnail information is present
+                if not info_dict.get('thumbnail') and not info_dict.get('thumbnails') or info_dict.get('_type') == 'error':
+                    err_msg = "Thumbnail is unavailable."
+                    if info_dict.get('_type') == 'error' and info_dict.get('error_message'):
+                        err_msg = info_dict.get('error_message')
+                    logger.warning(f"Thumbnail fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned no thumbnail. Message: {err_msg}")
+                    last_error = err_msg
+                    info_dict_full = None # Reset
+                    continue
+                
+                logger.info(f"Successfully fetched thumbnail info for {url} with proxy: {proxy_url if proxy_url else 'None'}")
+                break # Success
+
+        except yt_dlp.utils.DownloadError as e:
+            logger.warning(f"yt-dlp DownloadError during thumbnail fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}): {str(e)}")
+            last_error = str(e)
+            if hasattr(e, 'exc_info') and e.exc_info and e.exc_info[1]:
+                last_error = str(e.exc_info[1])
+            info_dict_full = None # Reset
+        except Exception as e:
+            logger.error(f"Unexpected error during thumbnail fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}): {str(e)}", exc_info=True)
+            last_error = f"An unexpected error occurred: {str(e)}"
+            info_dict_full = None # Reset
+
+    if not info_dict_full: # Check if loop completed without success
+        logger.error(f"All thumbnail fetch attempts failed for {url}. Last error: {last_error}")
+        return jsonify({'error': f'Could not retrieve thumbnail: {last_error}'}), 500
+
+    # At this point, info_dict should hold the correct video metadata dictionary
+    selected_thumbnail = info_dict.get('thumbnail') # yt-dlp often provides a direct 'thumbnail' field
+    if not selected_thumbnail and info_dict.get('thumbnails'):
+        # Fallback: iterate through thumbnails list to find a suitable one (e.g., hqdefault)
+        hq_thumb = next((t.get('url') for t in info_dict['thumbnails'] if 'hqdefault' in t.get('id', '').lower() or 'hqdefault' in t.get('url', '').lower()), None)
+        if hq_thumb:
+            selected_thumbnail = hq_thumb
+        elif info_dict['thumbnails']: # If no hqdefault, take the last one (often best quality)
+            selected_thumbnail = info_dict['thumbnails'][-1].get('url')
     
-    try:
-        yt = YouTube(url)
-        return jsonify({'thumbnail': yt.thumbnail_url})
-    except Exception as e:
-        logger.error(f"Error getting thumbnail for {url}: {str(e)}", exc_info=True)
-        return jsonify({'error': f'Could not retrieve thumbnail: {str(e)}'}), 500
+    if not selected_thumbnail:
+        logger.warning(f"No suitable thumbnail found for {url} in fetched metadata.")
+        # Fallback to a placeholder if absolutely no thumbnail is found by yt-dlp
+        # return jsonify({'error': 'No suitable thumbnail found in video metadata.'}), 404
+        selected_thumbnail = 'static/placeholder.png' # Or return error as above
+
+    return jsonify({'thumbnail': selected_thumbnail})
+
 
 @app.route('/get_video_info')
 def get_video_info():
     url = request.args.get('url')
     if not url:
         return jsonify({'error': 'URL is required'}), 400
+
+    ydl_opts_details = {
+        'quiet': False,
+        'no_warnings': False,
+        'logger': logger,
+        'skip_download': True,
+        'extract_flat': 'discard_in_playlist',
+        'forcejson': True,
+        'ignoreerrors': True,
+    }
+
+    proxies_to_try = PROXIES + [None] if PROXIES else [None]
+    last_error = "Failed to fetch detailed video info after trying all available proxies."
+    info_dict_full = None
+    info_dict = None # To store the actual video info (handles playlists)
+
+    for proxy_url in proxies_to_try:
+        current_ydl_opts = ydl_opts_details.copy()
+        if proxy_url:
+            current_ydl_opts['proxy'] = proxy_url
+            logger.info(f"Attempting detailed info fetch for {url} using proxy: {proxy_url}")
+        else:
+            current_ydl_opts.pop('proxy', None)
+            logger.info(f"Attempting detailed info fetch for {url} without proxy")
+        
+        try:
+            with yt_dlp.YoutubeDL(current_ydl_opts) as ydl:
+                info_dict_full = ydl.extract_info(url, download=False)
+                
+                if info_dict_full and 'entries' in info_dict_full and info_dict_full['entries']:
+                    info_dict = info_dict_full['entries'][0]
+                elif info_dict_full:
+                    info_dict = info_dict_full
+                else:
+                    logger.warning(f"Detailed info fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned no data.")
+                    last_error = "No data received for detailed info."
+                    info_dict_full = None
+                    continue
+
+                if not info_dict.get('title') or info_dict.get('_type') == 'error':
+                    err_msg = "Detailed video information is unavailable."
+                    if info_dict.get('_type') == 'error' and info_dict.get('error_message'):
+                        err_msg = info_dict.get('error_message')
+                    logger.warning(f"Detailed info fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned incomplete data. Message: {err_msg}")
+                    last_error = err_msg
+                    info_dict_full = None
+                    continue
+                
+                logger.info(f"Successfully fetched detailed info for {url} with proxy: {proxy_url if proxy_url else 'None'}")
+                break # Success
+
+        except yt_dlp.utils.DownloadError as e:
+            logger.warning(f"yt-dlp DownloadError during detailed info fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}): {str(e)}")
+            last_error = str(e)
+            if hasattr(e, 'exc_info') and e.exc_info and e.exc_info[1]:
+                last_error = str(e.exc_info[1])
+            info_dict_full = None
+        except Exception as e:
+            logger.error(f"Unexpected error during detailed info fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}): {str(e)}", exc_info=True)
+            last_error = f"An unexpected error occurred: {str(e)}"
+            info_dict_full = None
+
+    if not info_dict_full or not (info_dict and info_dict.get('title')): # Check after loop, ensure info_dict is valid
+        logger.error(f"All detailed info fetch attempts failed for {url}. Last error: {last_error}")
+        return jsonify({'error': f'Could not retrieve detailed video information: {last_error}'}), 500
+
+    # Prepare information for the text file from info_dict
+    title = info_dict.get('title', 'N/A')
+    author = info_dict.get('uploader', info_dict.get('channel', 'N/A'))
+    duration_seconds = info_dict.get('duration', 0)
+    length_str = f"{duration_seconds // 60}:{str(duration_seconds % 60).zfill(2)}" if duration_seconds else "N/A"
+    views = f"{info_dict.get('view_count', 0):,}" if info_dict.get('view_count') is not None else "N/A"
+    upload_date_str = info_dict.get('upload_date') # Format YYYYMMDD
+    publish_date_str = 'N/A'
+    if upload_date_str:
+        try:
+            publish_date_dt = datetime.strptime(upload_date_str, '%Y%m%d')
+            publish_date_str = publish_date_dt.strftime('%Y-%m-%d')
+        except ValueError:
+            logger.warning(f"Could not parse upload_date: {upload_date_str} for {title}")
+            publish_date_str = upload_date_str # Use raw if parsing fails
+
+    description = info_dict.get('description', 'N/A')
+    tags = ', '.join(info_dict.get('tags', [])) if info_dict.get('tags') else 'N/A'
+    age_limit = info_dict.get('age_limit')
+    age_restricted_str = f"{age_limit}+" if age_limit and age_limit > 0 else "No"
+    channel_url_val = info_dict.get('channel_url', 'N/A') # Renamed to avoid conflict
+    webpage_url = info_dict.get('webpage_url', url)
+    average_rating = info_dict.get('average_rating')
+    average_rating_str = f"{average_rating:.2f}/5" if average_rating is not None else "N/A"
+    like_count_val = f"{info_dict.get('like_count', 0):,}" if info_dict.get('like_count') is not None else "N/A" # Renamed
+
+    text_file_info = {
+        'Title': title,
+        'Author': author,
+        'Duration': length_str,
+        'Views': views,
+        'Publish Date': publish_date_str,
+        'Description Preview': description.split('\n')[0][:200] + ('...' if len(description.split('\n')[0]) > 200 or '\n' in description else ''),
+        'Full Description': description,
+        'Tags/Keywords': tags,
+        'Average Rating': average_rating_str,
+        'Like Count': like_count_val,
+        'Age Restricted': age_restricted_str,
+        'Channel URL': channel_url_val,
+        'Video URL': webpage_url,
+    }
+    
+    sanitized_title = sanitize_filename(title)
+    filename_txt = f"{sanitized_title}_info.txt"
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename_txt)
     
     try:
-        yt = YouTube(url)
-        info = {
-            'title': yt.title,
-            'author': yt.author,
-            'length': str(yt.length // 60) + ':' + str(yt.length % 60).zfill(2),
-            'views': f"{yt.views:,}",
-            'publish_date': yt.publish_date.strftime('%Y-%m-%d') if yt.publish_date else 'N/A',
-            'description': yt.description,
-            'keywords': ', '.join(yt.keywords) if hasattr(yt, 'keywords') else 'N/A',
-            'rating': round(yt.rating, 2) if hasattr(yt, 'rating') and yt.rating else 'N/A',
-            'age_restricted': yt.age_restricted,
-            'channel_url': yt.channel_url,
-            'embed_url': yt.embed_url,
-        }
-        
-        # Save to text file
-        filename = sanitize_filename(f"{yt.title}_info.txt")
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        
         with open(filepath, 'w', encoding='utf-8') as f:
-            for key, value in info.items():
-                f.write(f"{key.replace('_', ' ').title()}: {value}\n")
-        
-        return send_file(
-            filepath,
-            as_attachment=True,
-            download_name=filename
-        )
-        
+            for key, value in text_file_info.items():
+                f.write(f"{key}: {value}\n\n") # Added extra newline for readability
+
+        return send_file(filepath, as_attachment=True, download_name=filename_txt)
     except Exception as e:
-        logger.error(f"Error processing get_video_info for {url}: {str(e)}", exc_info=True)
-        return jsonify({'error': f'Could not retrieve and save video details: {str(e)}'}), 500
+        logger.error(f"Error writing or sending video info text file for {url}: {str(e)}", exc_info=True)
+        return jsonify({'error': f'Could not generate or send video info text file: {str(e)}'}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

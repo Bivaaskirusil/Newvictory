@@ -80,93 +80,87 @@ def get_info():
     temp_cookie_file_path = None
 
     try:
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as tmp_cookie:
+        # Create temp cookie file
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8', suffix='.txt') as tmp_cookie:
             tmp_cookie.write(cookies_str)
             temp_cookie_file_path = tmp_cookie.name
 
+        # All subsequent logic is now correctly indented within the try block
         ydl_opts_info = {
-        'quiet': False,
-        'no_warnings': False,
-        'logger': logger, 
-        'skip_download': True,
-        'extract_flat': 'discard_in_playlist',
-        'forcejson': True,
-        'ignoreerrors': True, # Try to fetch info even if some parts (like comments) fail
-        'cookiefile': COOKIE_FILE,
-        # 'youtube_include_dash_manifest': False, # Might reduce unnecessary data for info extraction
-    }
+            'quiet': False,
+            'no_warnings': False,
+            'logger': logger, 
+            'skip_download': True,
+            'extract_flat': 'discard_in_playlist',
+            'forcejson': True,
+            'ignoreerrors': True, 
+            'cookiefile': temp_cookie_file_path, # MODIFIED: Use the temporary cookie file
+        }
 
-    proxies_to_try = PROXIES + [None] if PROXIES else [None]
-    last_error = "Failed to fetch video metadata after trying all available proxies."
-    info_dict_full = None
+        proxies_to_try = PROXIES + [None] if PROXIES else [None]
+        last_error = "Failed to fetch video metadata after trying all available proxies."
+        info_dict_full = None
+        info_dict = None # Initialize info_dict here
 
-    for proxy_url in proxies_to_try:
-        current_ydl_opts = ydl_opts_info.copy()
-        if proxy_url:
-            current_ydl_opts['proxy'] = proxy_url
-            logger.info(f"Attempting metadata fetch for {url} using proxy: {proxy_url}")
-        else:
-            current_ydl_opts.pop('proxy', None)
-            logger.info(f"Attempting metadata fetch for {url} without proxy")
-        
-        try:
-            with yt_dlp.YoutubeDL(current_ydl_opts) as ydl:
-                info_dict_full = ydl.extract_info(url, download=False)
-                
-                # If 'entries' is present, it's a playlist, take the first video's info
-                # Or handle as error/unsupported if only single video expected
-                if info_dict_full and 'entries' in info_dict_full and info_dict_full['entries']:
-                    info_dict = info_dict_full['entries'][0]
-                elif info_dict_full:
-                    info_dict = info_dict_full
-                else:
-                    # If ydl.extract_info returned None or an empty dict for some reason
-                    logger.warning(f"Metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned no data.")
-                    last_error = "No data received from video provider."
-                    info_dict_full = None # Ensure loop continues
-                    continue
-
-                # Check if essential fields like title are present, otherwise it might be an error page or restricted video
-                if not info_dict.get('title') or info_dict.get('_type') == 'error':
-                    err_msg = "Video information is unavailable (may be private, deleted, or restricted)."
-                    if info_dict.get('_type') == 'error':
-                        err_msg = info_dict.get('error_message', 'yt-dlp reported an error but no specific message.')
-                        logger.warning(f"yt-dlp returned an error dictionary for {url} (proxy: {proxy_url if proxy_url else 'None'}): {json.dumps(info_dict)}")
-                    elif info_dict.get('title') is None and info_dict.get('webpage_url_basename') == 'error':
-                        err_msg = "Video information is unavailable (may be private or deleted)."
-                    else: # No title, but not explicitly an error type from ytdlp
-                        err_msg = "Received incomplete video information (e.g., no title)."
+        for proxy_url in proxies_to_try:
+            current_ydl_opts = ydl_opts_info.copy()
+            if proxy_url:
+                current_ydl_opts['proxy'] = proxy_url
+                logger.info(f"Attempting metadata fetch for {url} using proxy: {proxy_url}")
+            else:
+                current_ydl_opts.pop('proxy', None)
+                logger.info(f"Attempting metadata fetch for {url} without proxy")
+            
+            try:
+                with yt_dlp.YoutubeDL(current_ydl_opts) as ydl:
+                    info_dict_full = ydl.extract_info(url, download=False)
                     
-                    logger.warning(f"Metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned incomplete data or error. Deduced Message: {err_msg}")
-                    last_error = err_msg
-                    info_dict_full = None # Mark as failure for this proxy
-                    continue # Try next proxy
+                    if info_dict_full and 'entries' in info_dict_full and info_dict_full['entries']:
+                        info_dict = info_dict_full['entries'][0]
+                    elif info_dict_full:
+                        info_dict = info_dict_full
+                    else:
+                        logger.warning(f"Metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned no data.")
+                        last_error = "No data received from video provider."
+                        info_dict_full = None 
+                        info_dict = None
+                        continue
 
-                logger.info(f"Successfully fetched metadata for {url} with proxy: {proxy_url if proxy_url else 'None'}")
-                break # Success, info_dict_full contains the data (or info_dict if playlist item)
+                    if not info_dict.get('title') or info_dict.get('_type') == 'error':
+                        err_msg = "Video information is unavailable (may be private, deleted, or restricted)."
+                        if info_dict.get('_type') == 'error':
+                            err_msg = info_dict.get('error_message', 'yt-dlp reported an error but no specific message.')
+                            logger.warning(f"yt-dlp returned an error dictionary for {url} (proxy: {proxy_url if proxy_url else 'None'}): {json.dumps(info_dict)}")
+                        elif info_dict.get('title') is None and info_dict.get('webpage_url_basename') == 'error':
+                            err_msg = "Video information is unavailable (may be private or deleted)."
+                        else: 
+                            err_msg = "Received incomplete video information (e.g., no title)."
+                        
+                        logger.warning(f"Metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned incomplete data or error. Deduced Message: {err_msg}")
+                        last_error = err_msg
+                        info_dict_full = None 
+                        info_dict = None
+                        continue 
 
-        except yt_dlp.utils.DownloadError as e:
-            logger.warning(f"yt-dlp DownloadError during metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}): {str(e)}")
-            last_error = str(e)
-            if hasattr(e, 'exc_info') and e.exc_info and e.exc_info[1]:
-                last_error = str(e.exc_info[1])
-            info_dict_full = None # Mark as failure
-            # Continue to next proxy
-        except Exception as e:
-            logger.error(f"Unexpected error during metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}): {str(e)}", exc_info=True)
-            last_error = f"An unexpected error occurred: {str(e)}"
-            info_dict_full = None # Mark as failure
-            # Continue to next proxy
+                    logger.info(f"Successfully fetched metadata for {url} with proxy: {proxy_url if proxy_url else 'None'}")
+                    break 
 
-    if not info_dict_full or not info_dict_full.get('title'): # Check final result after loop
-        logger.error(f"All metadata fetch attempts failed for {url}. Last error: {last_error}")
-        # Ensure finally block is reached before returning
-        # return jsonify({'error': f'Could not retrieve video information: {last_error}'}), 500
-        # Instead, let it fall through to the finally block, then the check after finally will handle return
-        pass # Let it proceed to the finally block
-
-    # ... (existing code for processing info_dict) ...
-    # The actual return will be after the finally block
+            except yt_dlp.utils.DownloadError as e:
+                logger.warning(f"yt-dlp DownloadError during metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}): {str(e)}")
+                last_error = str(e)
+                if hasattr(e, 'exc_info') and e.exc_info and e.exc_info[1]:
+                    last_error = str(e.exc_info[1])
+                info_dict_full = None 
+                info_dict = None
+            except Exception as e:
+                logger.error(f"Unexpected error during metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}): {str(e)}", exc_info=True)
+                last_error = f"An unexpected error occurred: {str(e)}"
+                info_dict_full = None 
+                info_dict = None
+        
+        if not info_dict_full or not info_dict: 
+            logger.error(f"All metadata fetch attempts failed for {url}. Last error: {last_error}")
+            pass
 
     finally:
         if temp_cookie_file_path and os.path.exists(temp_cookie_file_path):
@@ -176,24 +170,17 @@ def get_info():
             except Exception as e_rm:
                 logger.error(f"Error removing temporary cookie file {temp_cookie_file_path}: {e_rm}")
 
-    # Re-check condition for return after finally block has executed
-    if not info_dict_full or not info_dict_full.get('title'):
+    if not info_dict_full or not info_dict or not info_dict.get('title'):
         logger.error(f"All metadata fetch attempts failed for {url} (checked after finally). Last error: {last_error}")
         return jsonify({'error': f'Could not retrieve video information: {last_error}'}), 500
 
-    # Use 'info_dict' which points to the single video's data (either original or first playlist item)
-    # If info_dict_full had 'entries', info_dict is info_dict_full['entries'][0]
-    # Otherwise, info_dict is info_dict_full itself.
-    # This logic was handled above, so 'info_dict' should be the correct one here.
-    
-    # Safely extract and format data
     title = info_dict.get('title', 'N/A')
     author = info_dict.get('uploader', info_dict.get('channel', 'N/A'))
     duration_seconds = info_dict.get('duration', 0)
     length_str = f"{duration_seconds // 60}:{str(duration_seconds % 60).zfill(2)}" if duration_seconds else "N/A"
     views = f"{info_dict.get('view_count', 0):,}" if info_dict.get('view_count') is not None else "N/A"
     
-    upload_date_str = info_dict.get('upload_date') # Format YYYYMMDD
+    upload_date_str = info_dict.get('upload_date') 
     publish_date_str = 'N/A'
     if upload_date_str:
         try:
@@ -201,19 +188,17 @@ def get_info():
             publish_date_str = publish_date_dt.strftime('%Y-%m-%d')
         except ValueError:
             logger.warning(f"Could not parse upload_date: {upload_date_str}")
-            publish_date_str = upload_date_str # Use raw if parsing fails
-
-    # Thumbnail: yt-dlp provides a list of thumbnails, find a good one or use the default
-    selected_thumbnail = info_dict.get('thumbnail') # This is often the best one
+            publish_date_str = upload_date_str 
+    
+    selected_thumbnail = info_dict.get('thumbnail') 
     if not selected_thumbnail and info_dict.get('thumbnails'):
-        # Prefer thumbnails with 'hqdefault' in id or url, or just take the last one (often highest res)
         hq_thumb = next((t.get('url') for t in info_dict['thumbnails'] if 'hqdefault' in t.get('id', '') or 'hqdefault' in t.get('url', '')), None)
         if hq_thumb:
             selected_thumbnail = hq_thumb
         else:
-            selected_thumbnail = info_dict['thumbnails'][-1].get('url') # Fallback to last in list
+            selected_thumbnail = info_dict['thumbnails'][-1].get('url') 
     if not selected_thumbnail:
-         selected_thumbnail = 'static/placeholder.png' # A default placeholder
+         selected_thumbnail = 'static/placeholder.png' 
 
     available_qualities = parse_ytdlp_video_qualities(info_dict.get('formats', []))
 

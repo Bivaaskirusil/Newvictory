@@ -36,6 +36,8 @@ PROXIES = [
     'http://orukwgru:xhwbr7lu6jlf@173.0.9.70:5653',
 ]
 
+COOKIE_FILE = 'youtube_cookies.txt'
+
 # Helper function to parse yt-dlp formats for video qualities
 def parse_ytdlp_video_qualities(formats):
     qualities = set()
@@ -77,7 +79,7 @@ def get_info():
         'extract_flat': 'discard_in_playlist',
         'forcejson': True,
         'ignoreerrors': True, # Try to fetch info even if some parts (like comments) fail
-        'verbose': True, # Enable verbose output from yt-dlp
+        'cookiefile': COOKIE_FILE,
         # 'youtube_include_dash_manifest': False, # Might reduce unnecessary data for info extraction
     }
 
@@ -372,7 +374,7 @@ def get_thumbnail():
         'extract_flat': 'discard_in_playlist',
         'forcejson': True,
         'ignoreerrors': True,
-        'verbose': True, # Enable verbose output from yt-dlp
+        'cookiefile': COOKIE_FILE,
         # yt-dlp fetches standard metadata including thumbnails by default
     }
 
@@ -468,7 +470,7 @@ def get_video_info():
         'extract_flat': 'discard_in_playlist',
         'forcejson': True,
         'ignoreerrors': True,
-        'verbose': True, # Enable verbose output from yt-dlp
+        'cookiefile': COOKIE_FILE,
     }
 
     proxies_to_try = PROXIES + [None] if PROXIES else [None]

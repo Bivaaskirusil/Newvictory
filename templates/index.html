@@ -157,7 +157,7 @@
                         <div>
                             <h3 class="text-lg font-medium text-gray-200 mb-2">Assets</h3>
                             <div class="flex flex-wrap gap-2">
-                                <a id="downloadThumbnailBtn" href="#" download class="btn btn-secondary"><i class="fas fa-image mr-2"></i>Thumbnail</a>
+                                <button id="downloadThumbnailBtn" class="btn btn-secondary"><i class="fas fa-image mr-2"></i>Thumbnail</button>
                                 <button id="downloadInfoBtn" class="btn btn-secondary"><i class="fas fa-file-alt mr-2"></i>Video Info (.txt)</button>
                             </div>
                         </div>
@@ -182,10 +182,130 @@
 
     <script>
         document.getElementById('currentYear').textContent = new Date().getFullYear();
+
+        const downloadThumbnailBtn = document.getElementById('downloadThumbnailBtn');
+
+        downloadThumbnailBtn.addEventListener('click', async () => {
+            const videoUrl = videoUrlInput.value;
+            const userCookies = userCookiesInput.value.trim();
+
+            if (!videoUrl) {
+                showErrorMessage('Please enter a video URL first to download the thumbnail.');
+                return;
+            }
+            if (!userCookies) {
+                showErrorMessage('YouTube cookies are required to download the thumbnail.');
+                return;
+            }
+
+            showLoader(true);
+            hideErrorMessage();
+
+            try {
+                const response = await fetch('/get_thumbnail', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: videoUrl, cookies: userCookies })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: 'Failed to fetch thumbnail. Unknown error.' }));
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+
+                const blob = await response.blob();
+                const thumbnailUrl = URL.createObjectURL(blob);
+                
+                const link = document.createElement('a');
+                link.href = thumbnailUrl;
+                // Try to get a filename from content-disposition or make one up
+                const contentDisposition = response.headers.get('content-disposition');
+                let filename = 'thumbnail.jpg'; // Default filename
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                    if (filenameMatch && filenameMatch[1]) {
+                        filename = filenameMatch[1].replace(/['"]/g, '');
+                    }
+                }
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(thumbnailUrl); // Clean up
+
+            } catch (error) {
+                console.error('Thumbnail download error:', error);
+                showErrorMessage(`Error downloading thumbnail: ${error.message}`);
+            } finally {
+                showLoader(false);
+            }
+        });
+
+        downloadInfoBtn.addEventListener('click', async () => {
+            const videoUrl = videoUrlInput.value;
+            const userCookies = userCookiesInput.value.trim();
+
+            if (!videoUrl) {
+                showErrorMessage('Please enter a video URL first to download the video info.');
+                return;
+            }
+            if (!userCookies) {
+                showErrorMessage('YouTube cookies are required to download the video info.');
+                return;
+            }
+
+            showLoader(true);
+            hideErrorMessage();
+
+            try {
+                const response = await fetch('/get_video_info', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: videoUrl, cookies: userCookies })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: 'Failed to fetch video info. Unknown error.' }));
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+
+                const blob = await response.blob();
+                const infoUrl = URL.createObjectURL(blob);
+                
+                const link = document.createElement('a');
+                link.href = infoUrl;
+                
+                const contentDisposition = response.headers.get('content-disposition');
+                let filename = 'video_info.txt'; // Default filename
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                    if (filenameMatch && filenameMatch[1]) {
+                        filename = filenameMatch[1].replace(/['"]/g, '');
+                    }
+                }
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(infoUrl);
+
+            } catch (error) {
+                console.error('Video info download error:', error);
+                showErrorMessage(`Error downloading video info: ${error.message}`);
+            } finally {
+                showLoader(false);
+            }
+        });
+
         const videoUrlInput = document.getElementById('videoUrl');
         const fetchBtn = document.getElementById('fetchBtn');
         const loaderDiv = document.getElementById('loader');
         const errorMessageDiv = document.getElementById('errorMessage');
+        const userCookiesInput = document.getElementById('userCookies');
         
         const videoInfoSection = document.getElementById('videoInfoSection');
         const thumbnailImg = document.getElementById('thumbnail');
@@ -199,7 +319,6 @@
         const videoQualityButtonsDiv = document.getElementById('videoQualityButtons');
         const downloadVideoBtn = document.getElementById('downloadVideoBtn');
         const downloadAudioBtn = document.getElementById('downloadAudioBtn');
-        const downloadThumbnailBtn = document.getElementById('downloadThumbnailBtn');
         const downloadInfoBtn = document.getElementById('downloadInfoBtn');
 
         const downloadProgressSection = document.getElementById('downloadProgressSection');
@@ -213,6 +332,7 @@
             loaderDiv.style.display = show ? 'flex' : 'none';
             fetchBtn.disabled = show;
             videoUrlInput.disabled = show;
+            userCookiesInput.disabled = show;
         }
 
         function showErrorMessage(message) {
@@ -253,10 +373,16 @@
             currentVideoData = null;
             if (clearInput) {
                 videoUrlInput.value = '';
+                userCookiesInput.value = '';
             }
         }
 
         async function getVideoInfo() {
+            const userCookies = userCookiesInput.value.trim();
+            if (!userCookies) {
+                showErrorMessage('YouTube cookies (Netscape format) are required in the field above to fetch video information.');
+                return;
+            }
             const url = videoUrlInput.value.trim();
             if (!url) {
                 showErrorMessage('Please paste a valid YouTube URL.');
@@ -269,8 +395,10 @@
             try {
                 const response = await fetch('/get_info', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url })
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: url, cookies: userCookies })
                 });
                 
                 const data = await response.json();
@@ -324,21 +452,51 @@
                 downloadVideoBtn.disabled = false;
             }
 
-            downloadThumbnailBtn.href = data.thumbnail;
-            downloadThumbnailBtn.download = `${(data.title || 'thumbnail').replace(/[^a-zA-Z0-9]/g, '_')}.jpg`;
+
+
+
 
             downloadOptionsSection.style.display = 'block';
         }
 
-        downloadVideoBtn.onclick = () => startDownload('video', selectedVideoQuality || 'best');
-        downloadAudioBtn.onclick = () => startDownload('audio', 'best');
-        downloadInfoBtn.onclick = () => {
-            if (!currentVideoData || !videoUrlInput.value.trim()) {
-                showErrorMessage('No video URL processed. Please fetch video info first.');
+        downloadVideoBtn.onclick = async () => {
+            const userCookies = userCookiesInput.value.trim();
+            if (!userCookies) {
+                showErrorMessage('YouTube cookies are required to download videos.');
+                resetProgress();
                 return;
             }
-            console.log('[DEBUG] Downloading video info for URL:', videoUrlInput.value.trim());
-            window.location.href = `/get_video_info?url=${encodeURIComponent(videoUrlInput.value.trim())}`;
+            const selectedQualityButton = document.querySelector('.quality-btn.selected');
+            if (!selectedQualityButton) {
+                showErrorMessage('Please select a video quality first.');
+                resetProgress();
+                return;
+            }
+            const videoUrl = videoUrlInput.value;
+
+            if (!videoUrl) {
+                showErrorMessage('Please enter a video URL first to download the video.');
+                return;
+            }
+
+            startDownload('video', selectedVideoQuality || 'best');
+        };
+
+        downloadAudioBtn.onclick = async () => {
+            const userCookies = userCookiesInput.value.trim();
+            if (!userCookies) {
+                showErrorMessage('YouTube cookies are required to download audios.');
+                resetProgress();
+                return;
+            }
+            const videoUrl = videoUrlInput.value;
+
+            if (!videoUrl) {
+                showErrorMessage('Please enter a video URL first to download the audio.');
+                return;
+            }
+
+            startDownload('audio', 'best');
         };
 
         async function startDownload(type, quality) {
@@ -355,12 +513,13 @@
             hideErrorMessage();
             fetchBtn.disabled = true; // Disable fetch button during download
             videoUrlInput.disabled = true;
+            userCookiesInput.disabled = true;
 
             try {
                 const response = await fetch('/download', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: videoUrlInput.value.trim(), quality, type })
+                    body: JSON.stringify({ url: videoUrlInput.value, quality, type, cookies: userCookiesInput.value.trim() })
                 });
 
                 const data = await response.json();

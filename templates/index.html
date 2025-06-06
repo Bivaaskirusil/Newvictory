@@ -51,13 +51,21 @@
                     id="videoUrl" 
                     placeholder="Paste YouTube URL here..." 
                     class="flex-grow px-4 py-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-white focus:border-transparent"
+                    autocomplete="off"
                 >
                 <button 
                     onclick="getVideoInfo()" 
+                    id="searchBtn"
                     class="btn-primary px-6 py-3 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold transition-colors"
+                    style="display:inline-block;"
                 >
                     <i class="fas fa-search mr-2"></i> Search
                 </button>
+                <script>
+                  // Always keep search bar and button visible
+                  document.getElementById('videoUrl').style.display = 'inline-block';
+                  document.getElementById('searchBtn').style.display = 'inline-block';
+                </script>
             </div>
 
             <div id="loading" class="loading mt-6 text-center">
@@ -152,6 +160,7 @@
         }
 
         function getVideoInfo() {
+    console.log('[DEBUG] getVideoInfo called');
             const url = document.getElementById('videoUrl').value.trim();
             if (!url) {
                 alert('Please enter a YouTube URL');
@@ -175,6 +184,7 @@
             })
             .then(response => response.json())
             .then(data => {
+                console.log('[DEBUG] Video info response:', data);
                 if (data.error) {
                     throw new Error(data.error);
                 }
@@ -202,7 +212,7 @@
             .catch(error => {
                 showLoading(false);
                 alert('Error: ' + error.message);
-                console.error('Error:', error);
+                console.error('[DEBUG] Error in getVideoInfo:', error);
             });
         }
 
@@ -266,6 +276,7 @@
         }
 
         function startDownload() {
+            console.log('[DEBUG] startDownload called');
             if (downloadInProgress) return;
             
             const qualityButtons = document.getElementById('qualityButtons');
@@ -294,6 +305,7 @@
             })
             .then(response => response.json())
             .then(data => {
+                console.log('[DEBUG] Download response:', data);
                 if (data.error) {
                     throw new Error(data.error);
                 }
@@ -305,7 +317,7 @@
                 checkDownloadStatus(data.filename);
             })
             .catch(error => {
-                console.error('Error:', error);
+                console.error('[DEBUG] Error in startDownload:', error);
                 document.getElementById('statusMessage').textContent = 'Error: ' + error.message;
                 downloadInProgress = false;
             });

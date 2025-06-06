@@ -18,6 +18,10 @@ app.config['UPLOAD_FOLDER'] = 'downloads'
 # Ensure download directory exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+@app.route('/')
+def index():
+    return render_template('index.html')
+
 # Proxies configuration (to be used with yt-dlp)
 PROXIES = [
     'http://45.77.99.210:3128',
@@ -73,6 +77,7 @@ def get_info():
         'extract_flat': 'discard_in_playlist',
         'forcejson': True,
         'ignoreerrors': True, # Try to fetch info even if some parts (like comments) fail
+        'verbose': True, # Enable verbose output from yt-dlp
         # 'youtube_include_dash_manifest': False, # Might reduce unnecessary data for info extraction
     }
 
@@ -109,12 +114,15 @@ def get_info():
                 # Check if essential fields like title are present, otherwise it might be an error page or restricted video
                 if not info_dict.get('title') or info_dict.get('_type') == 'error':
                     err_msg = "Video information is unavailable (may be private, deleted, or restricted)."
-                    if info_dict.get('_type') == 'error' and info_dict.get('error_message'):
-                        err_msg = info_dict.get('error_message')
+                    if info_dict.get('_type') == 'error':
+                        err_msg = info_dict.get('error_message', 'yt-dlp reported an error but no specific message.')
+                        logger.warning(f"yt-dlp returned an error dictionary for {url} (proxy: {proxy_url if proxy_url else 'None'}): {json.dumps(info_dict)}")
                     elif info_dict.get('title') is None and info_dict.get('webpage_url_basename') == 'error':
                         err_msg = "Video information is unavailable (may be private or deleted)."
+                    else: # No title, but not explicitly an error type from ytdlp
+                        err_msg = "Received incomplete video information (e.g., no title)."
                     
-                    logger.warning(f"Metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned incomplete data or error. Message: {err_msg}")
+                    logger.warning(f"Metadata fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned incomplete data or error. Deduced Message: {err_msg}")
                     last_error = err_msg
                     info_dict_full = None # Mark as failure for this proxy
                     continue # Try next proxy
@@ -364,6 +372,7 @@ def get_thumbnail():
         'extract_flat': 'discard_in_playlist',
         'forcejson': True,
         'ignoreerrors': True,
+        'verbose': True, # Enable verbose output from yt-dlp
         # yt-dlp fetches standard metadata including thumbnails by default
     }
 
@@ -396,11 +405,14 @@ def get_thumbnail():
                     continue
 
                 # Check if thumbnail information is present
-                if not info_dict.get('thumbnail') and not info_dict.get('thumbnails') or info_dict.get('_type') == 'error':
+                if info_dict.get('_type') == 'error' or (not info_dict.get('thumbnail') and not info_dict.get('thumbnails')):
                     err_msg = "Thumbnail is unavailable."
-                    if info_dict.get('_type') == 'error' and info_dict.get('error_message'):
-                        err_msg = info_dict.get('error_message')
-                    logger.warning(f"Thumbnail fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned no thumbnail. Message: {err_msg}")
+                    if info_dict.get('_type') == 'error':
+                        err_msg = info_dict.get('error_message', 'yt-dlp reported an error regarding thumbnail but no specific message.')
+                        logger.warning(f"yt-dlp returned an error dictionary during thumbnail fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}): {json.dumps(info_dict)}")
+                    else: # No thumbnail fields found, but not an explicit ytdlp error type
+                        err_msg = "No thumbnail information found in metadata."
+                    logger.warning(f"Thumbnail fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) problematic. Deduced Message: {err_msg}")
                     last_error = err_msg
                     info_dict_full = None # Reset
                     continue
@@ -456,6 +468,7 @@ def get_video_info():
         'extract_flat': 'discard_in_playlist',
         'forcejson': True,
         'ignoreerrors': True,
+        'verbose': True, # Enable verbose output from yt-dlp
     }
 
     proxies_to_try = PROXIES + [None] if PROXIES else [None]
@@ -486,11 +499,14 @@ def get_video_info():
                     info_dict_full = None
                     continue
 
-                if not info_dict.get('title') or info_dict.get('_type') == 'error':
+                if info_dict.get('_type') == 'error' or not info_dict.get('title'):
                     err_msg = "Detailed video information is unavailable."
-                    if info_dict.get('_type') == 'error' and info_dict.get('error_message'):
-                        err_msg = info_dict.get('error_message')
-                    logger.warning(f"Detailed info fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) returned incomplete data. Message: {err_msg}")
+                    if info_dict.get('_type') == 'error':
+                        err_msg = info_dict.get('error_message', 'yt-dlp reported an error for detailed info but no specific message.')
+                        logger.warning(f"yt-dlp returned an error dictionary during detailed info fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}): {json.dumps(info_dict)}")
+                    else: # No title, but not an explicit ytdlp error type
+                        err_msg = "Received incomplete detailed video information (e.g., no title)."
+                    logger.warning(f"Detailed info fetch for {url} (proxy: {proxy_url if proxy_url else 'None'}) problematic. Deduced Message: {err_msg}")
                     last_error = err_msg
                     info_dict_full = None
                     continue
